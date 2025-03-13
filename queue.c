@@ -148,13 +148,25 @@ bool q_delete_dup(struct list_head *head)
 
     element_t *cur, *next = NULL;
     bool removed = false;
+    bool duped = false;
 
     list_for_each_entry_safe (cur, next, head, list) {
+        if (&next->list != head && duped &&
+            strcmp(cur->value, next->value) != 0) {
+            list_del(&cur->list);
+            q_release_element(cur);
+            duped = false;
+            continue;
+        }
         if (&next->list != head && strcmp(cur->value, next->value) == 0) {
             list_del(&cur->list);
             q_release_element(cur);
             removed = true;
+            duped = true;
         }
+    }
+    if (duped) {
+        q_remove_tail(head, NULL, 0);
     }
     return removed;
 }
