@@ -23,8 +23,7 @@ void q_free(struct list_head *head)
     element_t *entry, *safe = NULL;
     list_for_each_entry_safe (entry, safe, head, list) {
         list_del(&entry->list);
-        free(entry->value);
-        free(entry);
+        q_release_element(entry);
     }
     free(head);
 }
@@ -166,7 +165,9 @@ bool q_delete_dup(struct list_head *head)
         }
     }
     if (duped) {
-        q_remove_tail(head, NULL, 0);
+        element_t *last_dup = list_last_entry(head, element_t, list);
+        list_del(&last_dup->list);
+        q_release_element(last_dup);
     }
     return removed;
 }
@@ -200,26 +201,31 @@ void q_reverse(struct list_head *head)
 /* Reverse the nodes of the list k at a time */  // https://leetcode.com/problems/reverse-nodes-in-k-group/
 void q_reverseK(struct list_head *head, int k)
 {
-    if (!head || list_empty(head) || list_is_singular(head) || k <= 1)
+    if (!head || list_empty(head) || list_is_singular(head) || k < 2) {
         return;
-
-    struct list_head *cur = head->next, *group_head = head;
-    int count = 0;
-
+    }
+    struct list_head *cur = head->next, *tail = NULL, *next_group = NULL,
+                     *prev_tail = head;
     while (cur != head) {
-        count++;
-        struct list_head *next = cur->next;
-
-        if (count % k == 0) {
-            struct list_head *tmp = group_head->next;
-            while (tmp != next) {
-                struct list_head *move = tmp;
-                tmp = tmp->next;
-                list_move_tail(move, group_head);
-            }
-            group_head = cur;
+        tail = cur;
+        int count = 1;
+        while (count < k && tail->next != head) {
+            tail = tail->next;
+            count++;
         }
-        cur = next;
+        if (count < k)
+            break;
+
+        next_group = tail->next;
+
+        struct list_head *move = cur->next;
+        while (move != next_group) {
+            struct list_head *tmp = move->next;
+            list_move(move, prev_tail);
+            move = tmp;
+        }
+        prev_tail = cur;
+        cur = next_group;
     }
 }
 
