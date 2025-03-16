@@ -43,6 +43,13 @@
 #define ENOUGH_MEASURE 10000
 #define TEST_TRIES 10
 
+static int cmp(const void *a, const void *b)
+{
+    int64_t x = *(const int64_t *) a;
+    int64_t y = *(const int64_t *) b;
+    return (x > y) - (x < y);
+}
+
 static t_context_t *t;
 
 /* threshold values for Welch's t-test */
@@ -64,12 +71,19 @@ static void differentiate(int64_t *exec_times,
         exec_times[i] = after_ticks[i] - before_ticks[i];
 }
 
-static void update_statistics(const int64_t *exec_times, uint8_t *classes)
+static void update_statistics(const int64_t *exec_times,
+                              uint8_t *classes,
+                              int64_t p10,
+                              int64_t p90)
 {
     for (size_t i = 0; i < N_MEASURES; i++) {
         int64_t difference = exec_times[i];
         /* CPU cycle counter overflowed or dropped measurement */
         if (difference <= 0)
+            continue;
+
+        // 10th ~ 90th percentile
+        if (difference < p10 || difference > p90)
             continue;
 
         /* do a t-test on the execution time */
@@ -116,6 +130,13 @@ static bool report(void)
     return true;
 }
 
+static int64_t percentile(int64_t *a_sorted, double which, size_t size)
+{
+    size_t index = (size_t) ((double) size * which);
+    assert(index < size);
+    return a_sorted[index];
+}
+
 static bool doit(int mode)
 {
     int64_t *before_ticks = calloc(N_MEASURES + 1, sizeof(int64_t));
@@ -130,10 +151,16 @@ static bool doit(int mode)
     }
 
     prepare_inputs(input_data, classes);
-
     bool ret = measure(before_ticks, after_ticks, input_data, mode);
     differentiate(exec_times, before_ticks, after_ticks);
-    update_statistics(exec_times, classes);
+
+    qsort(exec_times, N_MEASURES, sizeof(int64_t), cmp);
+
+    int64_t p10 = percentile(exec_times, 0.10, N_MEASURES);
+    int64_t p90 = percentile(exec_times, 0.90, N_MEASURES);
+
+    update_statistics(exec_times, classes, p10, p90);
+
     ret &= report();
 
     free(before_ticks);
@@ -170,8 +197,11 @@ static bool test_const(char *text, int mode)
     return result;
 }
 
-#define DUT_FUNC_IMPL(op) \
-    bool is_##op##_const(void) { return test_const(#op, DUT(op)); }
+#define DUT_FUNC_IMPL(op)                \
+    bool is_##op##_const(void)           \
+    {                                    \
+        return test_const(#op, DUT(op)); \
+    }
 
 #define _(x) DUT_FUNC_IMPL(x)
 DUT_FUNCS
